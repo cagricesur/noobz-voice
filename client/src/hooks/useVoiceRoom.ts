@@ -3,31 +3,39 @@ import { socket } from '../lib/socket'
 
 const LEVEL_POLL_MS = 80
 
-function playTone(frequency: number, durationMs: number, type: OscillatorType = 'sine') {
+/** Play a short chime (Discord-style): optional sequence of [frequency, durationMs]. */
+function playChime(notes: [number, number][], volume = 0.12) {
   try {
     const ctx = new AudioContext()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.type = type
-    osc.frequency.value = frequency
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    gain.gain.setValueAtTime(0.15, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + durationMs / 1000)
-    osc.start(ctx.currentTime)
-    osc.stop(ctx.currentTime + durationMs / 1000)
-    ctx.close()
+    let t = ctx.currentTime
+    for (const [freq, durMs] of notes) {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      gain.gain.setValueAtTime(0, t)
+      gain.gain.linearRampToValueAtTime(volume, t + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.001, t + durMs / 1000)
+      osc.start(t)
+      osc.stop(t + durMs / 1000)
+      t += durMs / 1000 + 0.04
+    }
+    setTimeout(() => ctx.close(), (t - ctx.currentTime) * 1000 + 100)
   } catch {
     // ignore
   }
 }
 
+/** Discord-style join: short ascending two-note chime. */
 function playJoinSound() {
-  playTone(880, 120)
+  playChime([[523.25, 80], [659.25, 100]])
 }
 
+/** Discord-style leave: short descending two-note chime. */
 function playLeaveSound() {
-  playTone(440, 150)
+  playChime([[523.25, 70], [392, 90]])
 }
 /** Scale raw frequency average (0–255) to 0–100 for progress bar; cap so normal speech doesn't max out */
 function levelToPercent(level: number): number {
