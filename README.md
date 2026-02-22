@@ -1,6 +1,6 @@
 # Noobz Voice
 
-Browser-based voice chat: create or join a room and talk with others in the same room.
+Browser-based voice chat: join the room and talk with everyone connected.
 
 ## Stack
 
@@ -44,7 +44,7 @@ Yes, you can deploy now. See **[DEPLOY.md](./DEPLOY.md)** for step-by-step Rende
 | Need | When |
 |------|------|
 | **TURN server** | Users behind strict NAT / corporate firewalls can’t connect. Add a TURN server (e.g. Metered.ca, Twilio) and put it in `RTCPeerConnection` `iceServers`. |
-| **Copy room code** | “Copy” button next to the room code for easier sharing. |
+| **Copy room link** | “Copy” button to share the app URL for others to join. |
 | **Persistent rooms** | Rooms are in-memory; server restart clears them. Add Redis or a DB if you want durable rooms. |
 | **Rejoin on reconnect** | If the tab sleeps or Socket.IO reconnects, you might leave the room; optional logic to rejoin and re-establish peers. |
 | **HTTPS** | Render gives you HTTPS for both frontend and backend; no extra config. |

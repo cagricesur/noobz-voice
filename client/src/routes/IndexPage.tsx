@@ -1,23 +1,14 @@
-import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Container, Title, Text, TextInput, Button, Stack, Paper } from '@mantine/core'
-import { randomId } from '@mantine/hooks'
 import { useRoomStore } from '../stores/roomStore'
+import { ROOM_ID } from '../lib/constants'
 
 export function IndexPage() {
   const navigate = useNavigate()
-  const [roomId, setRoomId] = useState('')
   const { displayName, setDisplayName } = useRoomStore()
 
-  const handleCreateRoom = () => {
-    const id = randomId().slice(0, 8)
-    navigate({ to: '/room/$roomId', params: { roomId: id } })
-  }
-
-  const handleJoinRoom = () => {
-    const id = (roomId || randomId()).trim().slice(0, 8)
-    if (!id) return
-    navigate({ to: '/room/$roomId', params: { roomId: id } })
+  const handleJoin = () => {
+    navigate({ to: '/room' })
   }
 
   return (
@@ -27,7 +18,7 @@ export function IndexPage() {
           Voice chat
         </Title>
         <Text c="dimmed" ta="center" size="sm">
-          Create a room or join with a code. Everyone in the same room can talk.
+          Join the room to talk with everyone connected.
         </Text>
         <Paper p="md" withBorder>
           <Stack gap="md">
@@ -37,20 +28,7 @@ export function IndexPage() {
               value={displayName}
               onChange={(e) => setDisplayName(e.currentTarget.value)}
             />
-            <Button variant="light" fullWidth onClick={handleCreateRoom}>
-              Create room
-            </Button>
-          </Stack>
-        </Paper>
-        <Paper p="md" withBorder>
-          <Stack gap="md">
-            <TextInput
-              label="Room code"
-              placeholder="Enter code to join"
-              value={roomId}
-              onChange={(e) => setRoomId(e.currentTarget.value)}
-            />
-            <Button variant="filled" fullWidth onClick={handleJoinRoom}>
+            <Button variant="filled" fullWidth onClick={handleJoin}>
               Join room
             </Button>
           </Stack>

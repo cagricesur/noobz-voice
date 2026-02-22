@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams, useNavigate } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import {
   Container,
   Title,
@@ -10,13 +10,13 @@ import {
   Group,
   Alert,
   ActionIcon,
-  Card,
-  Text as MantineText,
+  Box,
 } from '@mantine/core'
-import { IconMicrophone, IconMicrophoneOff } from '@tabler/icons-react'
+import { IconMicrophone, IconMicrophoneOff, IconUser } from '@tabler/icons-react'
 import { socket } from '../lib/socket'
 import { useRoomStore } from '../stores/roomStore'
 import { useVoiceRoom } from '../hooks/useVoiceRoom'
+import { ROOM_ID } from '../lib/constants'
 
 function RemoteAudio({ stream, peerId }: { stream: MediaStream; peerId: string }) {
   const ref = useRef<HTMLAudioElement>(null)
@@ -27,22 +27,98 @@ function RemoteAudio({ stream, peerId }: { stream: MediaStream; peerId: string }
   return <audio ref={ref} autoPlay playsInline aria-label={`Remote peer ${peerId}`} />
 }
 
+function UserBox({
+  name,
+  isSpeaking,
+  isLocal,
+  isMuted,
+  onMuteToggle,
+  children,
+}: {
+  name: string
+  isSpeaking: boolean
+  isLocal: boolean
+  isMuted?: boolean
+  onMuteToggle?: () => void
+  children?: React.ReactNode
+}) {
+  return (
+    <Box
+      p="md"
+      style={{
+        borderRadius: 8,
+        border: `2px solid ${isSpeaking ? 'var(--mantine-color-green-5)' : 'var(--mantine-color-default-border)'}`,
+        backgroundColor: isSpeaking ? 'var(--mantine-color-green-0)' : undefined,
+        transition: 'border-color 0.15s ease, background-color 0.15s ease',
+      }}
+    >
+      <Group justify="space-between" wrap="nowrap">
+        <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+          <Box
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 8,
+              backgroundColor: isSpeaking ? 'var(--mantine-color-green-2)' : 'var(--mantine-color-default-hover)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <IconUser size={22} stroke={1.5} />
+          </Box>
+          <div style={{ minWidth: 0 }}>
+            <Text size="sm" fw={500} truncate>
+              {name}
+              {isLocal && (
+                <Text component="span" size="xs" c="dimmed" ml={4}>
+                  (you)
+                </Text>
+              )}
+            </Text>
+            <Text size="xs" c="dimmed">
+              {isSpeaking ? 'Speaking…' : isLocal && isMuted ? 'Muted' : 'Connected'}
+            </Text>
+          </div>
+        </Group>
+        {isLocal && onMuteToggle !== undefined && (
+          <ActionIcon
+            variant={isMuted ? 'filled' : 'light'}
+            color={isMuted ? 'red' : 'green'}
+            size="lg"
+            onClick={onMuteToggle}
+            title={isMuted ? 'Unmute' : 'Mute'}
+          >
+            {isMuted ? <IconMicrophoneOff size={20} /> : <IconMicrophone size={20} />}
+          </ActionIcon>
+        )}
+        {children}
+      </Group>
+    </Box>
+  )
+}
+
 export function RoomPage() {
-  const { roomId } = useParams({ strict: false }) as { roomId: string }
   const navigate = useNavigate()
   const { displayName } = useRoomStore()
   const [joined, setJoined] = useState(false)
-  const { remotePeers, isMuted, setMuted, error } = useVoiceRoom(roomId, displayName || 'Guest')
+  const {
+    remotePeers,
+    isMuted,
+    setMuted,
+    error,
+    localIsSpeaking,
+    speakingPeerIds,
+  } = useVoiceRoom(ROOM_ID, displayName || 'Guest')
 
   useEffect(() => {
-    if (!roomId) return
-    socket.emit('join-room', roomId, displayName || 'Guest')
+    socket.emit('join-room', ROOM_ID, displayName || 'Guest')
     const onJoined = () => setJoined(true)
     socket.on('joined-room', onJoined)
     return () => {
       socket.off('joined-room', onJoined)
     }
-  }, [roomId, displayName])
+  }, [displayName])
 
   const handleLeave = () => {
     socket.disconnect()
@@ -50,11 +126,31 @@ export function RoomPage() {
     navigate({ to: '/' })
   }
 
+  const userList = [
+    { id: 'local', name: displayName || 'Guest', isLocal: true, isSpeaking: localIsSpeaking, isMuted },
+    ...Array.from(remotePeers.entries()).map(([peerId, state]) => ({
+      id: peerId,
+      name: state.displayName ?? peerId.slice(0, 8),
+      isLocal: false,
+      isSpeaking: !!speakingPeerIds[peerId],
+      stream: state.stream,
+    })),
+  ]
+
   return (
     <Container size="sm" py="xl">
       <Stack gap="lg">
-        <Title order={2}>Room: {roomId}</Title>
-        <Text c="dimmed">Share this code so others can join. You can talk when connected.</Text>
+        <Group justify="space-between" align="flex-start">
+          <div>
+            <Title order={2}>Voice chat</Title>
+            <Text c="dimmed" size="sm">
+              Everyone in the room is listed below. Your box highlights when you speak.
+            </Text>
+          </div>
+          <Button variant="light" color="red" size="xs" onClick={handleLeave}>
+            Leave
+          </Button>
+        </Group>
 
         {error && (
           <Alert color="red" title="Microphone access">
@@ -62,60 +158,34 @@ export function RoomPage() {
           </Alert>
         )}
 
-        <Paper p="lg" withBorder>
-          <Stack gap="md">
-            <Group justify="space-between">
-              <MantineText fw={600} size="lg">
-                {roomId}
-              </MantineText>
-              <Button variant="light" color="red" size="xs" onClick={handleLeave}>
-                Leave room
-              </Button>
-            </Group>
-
-            {joined && (
-              <>
-                <Group>
-                  <Text size="sm" c="dimmed">
-                    Your microphone:
-                  </Text>
-                  <ActionIcon
-                    variant={isMuted ? 'filled' : 'light'}
-                    color={isMuted ? 'red' : 'green'}
-                    size="lg"
-                    onClick={() => setMuted(!isMuted)}
-                    title={isMuted ? 'Unmute' : 'Mute'}
-                  >
-                    {isMuted ? <IconMicrophoneOff size={20} /> : <IconMicrophone size={20} />}
-                  </ActionIcon>
-                  <Text size="sm">{isMuted ? 'Muted' : 'On'}</Text>
-                </Group>
-
-                {Array.from(remotePeers.entries()).length > 0 && (
-                  <Stack gap="xs">
-                    <Text size="sm" c="dimmed">
-                      In call:
-                    </Text>
-                    {Array.from(remotePeers.entries()).map(([peerId, state]) => (
-                      <Card key={peerId} withBorder padding="sm">
-                        <Group justify="space-between">
-                          <Text size="sm">{state.displayName ?? peerId.slice(0, 8)}</Text>
-                          {state.stream && <RemoteAudio stream={state.stream} peerId={peerId} />}
-                        </Group>
-                      </Card>
-                    ))}
-                  </Stack>
-                )}
-
-                {Array.from(remotePeers.entries()).length === 0 && (
-                  <Text size="sm" c="dimmed">
-                    Waiting for others to join…
-                  </Text>
-                )}
-              </>
-            )}
-          </Stack>
-        </Paper>
+        <Stack gap="sm">
+          {userList.map((u) =>
+            u.isLocal ? (
+              <UserBox
+                key="local"
+                name={u.name}
+                isSpeaking={u.isSpeaking}
+                isLocal
+                isMuted={u.isMuted}
+                onMuteToggle={() => setMuted(!isMuted)}
+              />
+            ) : (
+              <UserBox
+                key={u.id}
+                name={u.name}
+                isSpeaking={u.isSpeaking}
+                isLocal={false}
+              >
+                {'stream' in u && u.stream && <RemoteAudio stream={u.stream} peerId={u.id} />}
+              </UserBox>
+            ),
+          )}
+          {userList.length === 1 && (
+            <Text size="sm" c="dimmed" ta="center" py="md">
+              {joined ? 'Waiting for others to join…' : 'Connecting…'}
+            </Text>
+          )}
+        </Stack>
       </Stack>
     </Container>
   )

@@ -37,7 +37,7 @@ The client is built with this env var, so Socket.IO will connect to your backend
 
 ## 3. After deploy
 
-- Open the frontend URL, create a room, open another tab (or device) and join with the same code. Voice should work.
+- Open the frontend URL, join the room. Open another tab (or device) and join too. Voice should work.
 - **Free tier:** Backend may sleep after inactivity; first request can be slow.
 
 ---

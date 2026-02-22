@@ -15,7 +15,7 @@ const indexRoute = createRoute({
 
 const roomRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: 'room/$roomId',
+  path: 'room',
   component: RoomPage,
 })
 
