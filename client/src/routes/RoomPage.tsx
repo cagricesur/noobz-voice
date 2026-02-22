@@ -5,6 +5,7 @@ import {
   Button,
   Container,
   Group,
+  Progress,
   Stack,
   Text,
   Title,
@@ -43,35 +44,37 @@ function RemoteAudio({
   );
 }
 
+const SPEAKING_BORDER_THRESHOLD = 15;
+
 function UserBox({
   name,
-  isSpeaking,
   isLocal,
   isMuted,
   onMuteToggle,
+  audioLevel,
   pingMs,
   voiceDelayMs,
   children,
 }: {
   name: string;
-  isSpeaking: boolean;
   isLocal: boolean;
   isMuted?: boolean;
   onMuteToggle?: () => void;
+  audioLevel: number;
   pingMs?: number | null;
   voiceDelayMs?: number | null;
   children?: React.ReactNode;
 }) {
+  const isSpeaking = audioLevel > SPEAKING_BORDER_THRESHOLD;
   return (
     <Box
       p="md"
       style={{
         borderRadius: 8,
-        border: `2px solid ${isSpeaking ? "var(--mantine-color-green-5)" : "var(--mantine-color-default-border)"}`,
-        backgroundColor: isSpeaking
-          ? "var(--mantine-color-green-0)"
-          : undefined,
-        transition: "border-color 0.15s ease, background-color 0.15s ease",
+        border: isSpeaking
+          ? "2px solid var(--mantine-color-green-5)"
+          : "1px solid var(--mantine-color-default-border)",
+        transition: "border-color 0.15s ease, border-width 0.15s ease",
       }}
     >
       <Group justify="space-between" wrap="nowrap">
@@ -81,9 +84,7 @@ function UserBox({
               width: 40,
               height: 40,
               borderRadius: 8,
-              backgroundColor: isSpeaking
-                ? "var(--mantine-color-green-2)"
-                : "var(--mantine-color-default-hover)",
+              backgroundColor: "var(--mantine-color-default-hover)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -101,7 +102,7 @@ function UserBox({
               )}
             </Text>
             <Text size="xs" c="dimmed">
-              {isSpeaking ? "Speaking…" : isMuted ? "Muted" : "Connected"}
+              {isMuted ? "Muted" : "Connected"}
             </Text>
             {(pingMs != null || voiceDelayMs != null) && (
               <Text size="xs" c="dimmed">
@@ -133,6 +134,14 @@ function UserBox({
         )}
         {children}
       </Group>
+      <Progress
+        value={audioLevel}
+        size="xs"
+        mt="sm"
+        radius="xl"
+        color="green"
+        style={{ transition: "width 0.1s ease" }}
+      />
     </Box>
   );
 }
@@ -148,8 +157,8 @@ export function RoomPage() {
     isMuted,
     setMuted,
     error,
-    localIsSpeaking,
-    speakingPeerIds,
+    localLevel,
+    peerLevels,
     peerDelayMs,
   } = useVoiceRoom(ROOM_ID, displayName || "Guest");
 
@@ -211,16 +220,16 @@ export function RoomPage() {
       id: "local",
       name: displayName || "Guest",
       isLocal: true,
-      isSpeaking: localIsSpeaking,
       isMuted,
+      audioLevel: localLevel,
       pingMs: serverPingMs,
     },
     ...Array.from(remotePeers.entries()).map(([peerId, state]) => ({
       id: peerId,
       name: state.displayName ?? peerId.slice(0, 8),
       isLocal: false,
-      isSpeaking: !!speakingPeerIds[peerId],
       isMuted: state.muted,
+      audioLevel: peerLevels[peerId] ?? 0,
       voiceDelayMs: peerDelayMs[peerId],
       stream: state.stream,
     })),
@@ -273,19 +282,19 @@ export function RoomPage() {
               <UserBox
                 key="local"
                 name={u.name}
-                isSpeaking={localIsSpeaking}
                 isLocal
                 isMuted={"isMuted" in u ? u.isMuted : undefined}
                 onMuteToggle={handleMuteToggle}
+                audioLevel={"audioLevel" in u ? u.audioLevel : 0}
                 pingMs={"pingMs" in u ? u.pingMs : undefined}
               />
             ) : (
               <UserBox
                 key={u.id}
                 name={u.name}
-                isSpeaking={u.isSpeaking}
                 isLocal={false}
                 isMuted={"isMuted" in u ? u.isMuted : undefined}
+                audioLevel={"audioLevel" in u ? u.audioLevel : 0}
                 voiceDelayMs={"voiceDelayMs" in u ? u.voiceDelayMs : undefined}
               >
                 {"stream" in u && u.stream && (

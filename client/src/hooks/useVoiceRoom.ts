@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { socket } from '../lib/socket'
 
-const SPEAKING_THRESHOLD = 25
-const LEVEL_POLL_MS = 100
+const LEVEL_POLL_MS = 80
+/** Scale raw frequency average (0–255) to 0–100 for progress bar; cap so normal speech doesn't max out */
+function levelToPercent(level: number): number {
+  return Math.min(100, Math.round((level / 255) * 120))
+}
 
 interface PeerState {
   stream: MediaStream | null
@@ -15,7 +18,7 @@ function createStreamAnalyser(stream: MediaStream, ctx: AudioContext): AnalyserN
     const source = ctx.createMediaStreamSource(stream)
     const analyser = ctx.createAnalyser()
     analyser.fftSize = 256
-    analyser.smoothingTimeConstant = 0.6
+    analyser.smoothingTimeConstant = 0.4
     source.connect(analyser)
     return analyser
   } catch {
@@ -36,8 +39,8 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
   const [remotePeers, setRemotePeers] = useState<Map<string, PeerState>>(new Map())
   const [isMuted, setIsMuted] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [localIsSpeaking, setLocalIsSpeaking] = useState(false)
-  const [speakingPeerIds, setSpeakingPeerIds] = useState<Record<string, boolean>>({})
+  const [localLevel, setLocalLevel] = useState(0)
+  const [peerLevels, setPeerLevels] = useState<Record<string, number>>({})
   const [peerDelayMs, setPeerDelayMs] = useState<Record<string, number>>({})
   const peersRef = useRef<Map<string, { pc: RTCPeerConnection; pendingCandidates: RTCIceCandidate[] }>>(new Map())
   const streamRef = useRef<MediaStream | null>(null)
@@ -259,8 +262,9 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
     const remotes = remotePeers
     if (!local && remotes.size === 0) return
 
+    let cancelled = false
+    const intervalRef = { current: null as ReturnType<typeof setInterval> | null }
     const ctx = new AudioContext()
-    void ctx.resume() // ensure context runs so local level is detected (e.g. after user gesture)
     let localAnalyser: AnalyserNode | null = null
     if (local && local.getAudioTracks().length > 0) {
       localAnalyser = createStreamAnalyser(local, ctx)
@@ -275,31 +279,34 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
 
     analysersRef.current = { ctx, local: localAnalyser, remote: remoteAnalysers }
 
-    const interval = setInterval(() => {
-      const current = analysersRef.current
-      if (!current) return
+    void ctx.resume().then(() => {
+      if (cancelled) return
+      intervalRef.current = setInterval(() => {
+        const current = analysersRef.current
+        if (!current) return
 
-      let localSpeaking = false
-      if (current.local) {
-        const level = getAverageLevel(current.local)
-        localSpeaking = !isMuted && level > SPEAKING_THRESHOLD
-      }
-      setLocalIsSpeaking(localSpeaking)
+        let localPct = 0
+        if (current.local && !isMuted) {
+          localPct = levelToPercent(getAverageLevel(current.local))
+        }
+        setLocalLevel(localPct)
 
-      const next: Record<string, boolean> = {}
-      current.remote.forEach((analyser, peerId) => {
-        next[peerId] = getAverageLevel(analyser) > SPEAKING_THRESHOLD
-      })
-      setSpeakingPeerIds((prev) => {
-        const same =
-          Object.keys(prev).length === Object.keys(next).length &&
-          Object.keys(next).every((id) => prev[id] === next[id])
-        return same ? prev : next
-      })
-    }, LEVEL_POLL_MS)
+        const next: Record<string, number> = {}
+        current.remote.forEach((analyser, peerId) => {
+          next[peerId] = levelToPercent(getAverageLevel(analyser))
+        })
+        setPeerLevels((prev) => {
+          const same =
+            Object.keys(prev).length === Object.keys(next).length &&
+            Object.keys(next).every((id) => prev[id] === next[id])
+          return same ? prev : next
+        })
+      }, LEVEL_POLL_MS)
+    })
 
     return () => {
-      clearInterval(interval)
+      cancelled = true
+      if (intervalRef.current) clearInterval(intervalRef.current)
       analysersRef.current = null
       ctx.close()
     }
@@ -345,8 +352,8 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
     isMuted,
     setMuted,
     error,
-    localIsSpeaking,
-    speakingPeerIds,
+    localLevel,
+    peerLevels,
     peerDelayMs,
   }
 }
