@@ -13,6 +13,7 @@ import {
 import { useRoomStore } from "../stores/roomStore";
 import {
   DISPLAY_NAME_MAX_LENGTH,
+  DISPLAY_NAME_MIN_LENGTH,
   DISPLAY_NAME_STORAGE_KEY,
   normalizeDisplayName,
 } from "../lib/constants";
@@ -25,6 +26,7 @@ export function IndexPage() {
   const navigate = useNavigate();
   const { displayName, setDisplayName } = useRoomStore();
   const [rememberName, setRememberName] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   // Load saved display name on mount (normalized)
   useEffect(() => {
@@ -54,11 +56,18 @@ export function IndexPage() {
   };
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setJoinError(null);
     setDisplayName(normalizeDisplayName(e.currentTarget.value));
   };
 
   const handleJoin = () => {
-    const name = normalizeDisplayName(displayName) || getRandomGuestName();
+    setJoinError(null);
+    const raw = normalizeDisplayName(displayName);
+    const name = raw || getRandomGuestName();
+    if (name.length < DISPLAY_NAME_MIN_LENGTH) {
+      setJoinError(`Name must be at least ${DISPLAY_NAME_MIN_LENGTH} characters`);
+      return;
+    }
     setDisplayName(name);
     navigate({ to: "/room" });
   };
@@ -76,10 +85,11 @@ export function IndexPage() {
           <Stack gap="md">
             <TextInput
               label="Your name"
-              placeholder="Letters, numbers, '-' only, max 15"
+              placeholder={`${DISPLAY_NAME_MIN_LENGTH}–${DISPLAY_NAME_MAX_LENGTH} characters`}
               value={displayName}
               onChange={handleNameChange}
               maxLength={DISPLAY_NAME_MAX_LENGTH}
+              error={joinError ?? undefined}
             />
             <Checkbox
               label="Remember my name"

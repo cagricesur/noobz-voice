@@ -184,6 +184,7 @@ export function RoomPage() {
   const { displayName, inputDeviceId, outputDeviceId, setInputDeviceId, setOutputDeviceId } = useRoomStore();
   const [joined, setJoined] = useState(false);
   const [nameTaken, setNameTaken] = useState(false);
+  const [nameTooShort, setNameTooShort] = useState(false);
   const [serverPingMs, setServerPingMs] = useState<number | null>(null);
   const [devices, setDevices] = useState<AudioDevices>({ inputs: [], outputs: [] });
   const {
@@ -198,15 +199,19 @@ export function RoomPage() {
 
   useEffect(() => {
     setNameTaken(false);
+    setNameTooShort(false);
     const name = normalizeDisplayName(displayName) || "Guest";
     socket.emit("join-room", ROOM_ID, name);
     const onJoined = () => setJoined(true);
     const onNameTaken = () => setNameTaken(true);
+    const onNameTooShort = () => setNameTooShort(true);
     socket.on("joined-room", onJoined);
     socket.on("name-taken", onNameTaken);
+    socket.on("name-too-short", onNameTooShort);
     return () => {
       socket.off("joined-room", onJoined);
       socket.off("name-taken", onNameTaken);
+      socket.off("name-too-short", onNameTooShort);
     };
   }, [displayName]);
 
@@ -344,6 +349,25 @@ export function RoomPage() {
             onClose={() => setNameTaken(false)}
           >
             Someone else is using this name. Go back and choose a different one.
+            <Button
+              variant="light"
+              size="xs"
+              mt="sm"
+              onClick={() => navigate({ to: "/" })}
+            >
+              Choose another name
+            </Button>
+          </Alert>
+        )}
+
+        {nameTooShort && (
+          <Alert
+            color="orange"
+            title="Name too short"
+            withCloseButton
+            onClose={() => setNameTooShort(false)}
+          >
+            Name must be at least 5 characters. Go back and enter a longer name.
             <Button
               variant="light"
               size="xs"

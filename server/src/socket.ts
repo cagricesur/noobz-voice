@@ -1,10 +1,11 @@
 import type { Server } from 'socket.io'
 
+const DISPLAY_NAME_MIN_LENGTH = 5
 const DISPLAY_NAME_MAX_LENGTH = 15
 
 function normalizeDisplayName(value: string): string {
   const name = value
-    .replace(/[^a-zA-Z0-9-]/g, '')
+    .replace(/[^\p{L}\p{N} -]/gu, '')
     .trim()
     .slice(0, DISPLAY_NAME_MAX_LENGTH)
   return name || 'Guest'
@@ -18,6 +19,10 @@ export function setupSocketHandlers(io: Server) {
       const id = String(roomId).trim().slice(0, 32)
       if (!id) return
       const name = normalizeDisplayName(displayName ?? 'Guest')
+      if (name.length < DISPLAY_NAME_MIN_LENGTH) {
+        socket.emit('name-too-short')
+        return
+      }
       const nameLower = name.toLowerCase()
       if (!rooms.has(id)) rooms.set(id, new Set())
       const room = rooms.get(id)!
