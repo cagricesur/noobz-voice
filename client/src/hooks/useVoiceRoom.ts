@@ -38,6 +38,7 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
   const [error, setError] = useState<string | null>(null)
   const [localIsSpeaking, setLocalIsSpeaking] = useState(false)
   const [speakingPeerIds, setSpeakingPeerIds] = useState<Record<string, boolean>>({})
+  const [peerDelayMs, setPeerDelayMs] = useState<Record<string, number>>({})
   const peersRef = useRef<Map<string, { pc: RTCPeerConnection; pendingCandidates: RTCIceCandidate[] }>>(new Map())
   const streamRef = useRef<MediaStream | null>(null)
   const analysersRef = useRef<{ ctx: AudioContext; local: AnalyserNode | null; remote: Map<string, AnalyserNode> } | null>(null)
@@ -308,6 +309,36 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
     setIsMuted(muted)
   }, [])
 
+  // Poll WebRTC stats for each peer to get RTT; show one-way delay (RTT/2) as voice delay
+  useEffect(() => {
+    if (!roomId) return
+    const DELAY_POLL_MS = 2000
+    const interval = setInterval(async () => {
+      const next: Record<string, number> = {}
+      for (const [peerId, { pc }] of peersRef.current) {
+        if (pc.connectionState !== 'connected') continue
+        try {
+          const report = await pc.getStats()
+          for (const stat of report.values()) {
+            if (stat.type === 'candidate-pair' && 'currentRoundTripTime' in stat && typeof (stat as { currentRoundTripTime?: number }).currentRoundTripTime === 'number') {
+              const rttSec = (stat as { currentRoundTripTime: number }).currentRoundTripTime
+              const oneWayMs = Math.round((rttSec * 1000) / 2)
+              next[peerId] = oneWayMs
+              break
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+      setPeerDelayMs((prev) => {
+        const same = Object.keys(prev).length === Object.keys(next).length && Object.keys(next).every((id) => prev[id] === next[id])
+        return same ? prev : next
+      })
+    }, DELAY_POLL_MS)
+    return () => clearInterval(interval)
+  }, [roomId])
+
   return {
     localStream,
     remotePeers,
@@ -316,5 +347,6 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
     error,
     localIsSpeaking,
     speakingPeerIds,
+    peerDelayMs,
   }
 }

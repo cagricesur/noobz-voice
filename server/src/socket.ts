@@ -76,5 +76,9 @@ export function setupSocketHandlers(io: Server) {
     socket.on('webrtc-ice', (payload: { to: string; candidate: unknown }) => {
       io.to(payload.to).emit('webrtc-ice', { from: socket.id, candidate: payload.candidate })
     })
+
+    socket.on('ping', (timestamp: number) => {
+      socket.emit('pong', timestamp)
+    })
   })
 }

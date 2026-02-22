@@ -49,6 +49,8 @@ function UserBox({
   isLocal,
   isMuted,
   onMuteToggle,
+  pingMs,
+  voiceDelayMs,
   children,
 }: {
   name: string;
@@ -56,6 +58,8 @@ function UserBox({
   isLocal: boolean;
   isMuted?: boolean;
   onMuteToggle?: () => void;
+  pingMs?: number | null;
+  voiceDelayMs?: number | null;
   children?: React.ReactNode;
 }) {
   return (
@@ -99,6 +103,12 @@ function UserBox({
             <Text size="xs" c="dimmed">
               {isSpeaking ? "Speaking…" : isMuted ? "Muted" : "Connected"}
             </Text>
+            {(pingMs != null || voiceDelayMs != null) && (
+              <Text size="xs" c="dimmed">
+                {isLocal && pingMs != null && `Ping: ${pingMs} ms`}
+                {!isLocal && voiceDelayMs != null && `Voice: ~${voiceDelayMs} ms`}
+              </Text>
+            )}
           </div>
         </Group>
         {isLocal && onMuteToggle !== undefined && (
@@ -132,6 +142,7 @@ export function RoomPage() {
   const { displayName } = useRoomStore();
   const [joined, setJoined] = useState(false);
   const [nameTaken, setNameTaken] = useState(false);
+  const [serverPingMs, setServerPingMs] = useState<number | null>(null);
   const {
     remotePeers,
     isMuted,
@@ -139,6 +150,7 @@ export function RoomPage() {
     error,
     localIsSpeaking,
     speakingPeerIds,
+    peerDelayMs,
   } = useVoiceRoom(ROOM_ID, displayName || "Guest");
 
   useEffect(() => {
@@ -160,6 +172,28 @@ export function RoomPage() {
     if (joined) socket.emit("set-muted", isMuted);
   }, [joined, isMuted]);
 
+  // Measure ping to server (RTT) when in room
+  useEffect(() => {
+    if (!joined) {
+      setServerPingMs(null);
+      return;
+    }
+    const PING_INTERVAL_MS = 3000;
+    const onPong = (sentAt: number) => {
+      setServerPingMs(Math.round(Date.now() - sentAt));
+    };
+    socket.on("pong", onPong);
+    const interval = setInterval(() => {
+      socket.emit("ping", Date.now());
+    }, PING_INTERVAL_MS);
+    socket.emit("ping", Date.now());
+    return () => {
+      clearInterval(interval);
+      socket.off("pong", onPong);
+      setServerPingMs(null);
+    };
+  }, [joined]);
+
   const handleLeave = () => {
     socket.disconnect();
     socket.connect();
@@ -179,6 +213,7 @@ export function RoomPage() {
       isLocal: true,
       isSpeaking: localIsSpeaking,
       isMuted,
+      pingMs: serverPingMs,
     },
     ...Array.from(remotePeers.entries()).map(([peerId, state]) => ({
       id: peerId,
@@ -186,6 +221,7 @@ export function RoomPage() {
       isLocal: false,
       isSpeaking: !!speakingPeerIds[peerId],
       isMuted: state.muted,
+      voiceDelayMs: peerDelayMs[peerId],
       stream: state.stream,
     })),
   ];
@@ -241,6 +277,7 @@ export function RoomPage() {
                 isLocal
                 isMuted={"isMuted" in u ? u.isMuted : undefined}
                 onMuteToggle={handleMuteToggle}
+                pingMs={"pingMs" in u ? u.pingMs : undefined}
               />
             ) : (
               <UserBox
@@ -249,6 +286,7 @@ export function RoomPage() {
                 isSpeaking={u.isSpeaking}
                 isLocal={false}
                 isMuted={"isMuted" in u ? u.isMuted : undefined}
+                voiceDelayMs={"voiceDelayMs" in u ? u.voiceDelayMs : undefined}
               >
                 {"stream" in u && u.stream && (
                   <RemoteAudio stream={u.stream} peerId={u.id} />
