@@ -34,7 +34,7 @@ function getAverageLevel(analyser: AnalyserNode): number {
   return data.length > 0 ? sum / data.length : 0
 }
 
-export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
+export function useVoiceRoom(roomId: string | undefined, _displayName: string, inputDeviceId: string | null) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [remotePeers, setRemotePeers] = useState<Map<string, PeerState>>(new Map())
   const [isMuted, setIsMuted] = useState(false)
@@ -44,20 +44,30 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
   const [peerDelayMs, setPeerDelayMs] = useState<Record<string, number>>({})
   const peersRef = useRef<Map<string, { pc: RTCPeerConnection; pendingCandidates: RTCIceCandidate[] }>>(new Map())
   const streamRef = useRef<MediaStream | null>(null)
+  const inputDeviceIdRef = useRef<string | null>(null)
   const analysersRef = useRef<{ ctx: AudioContext; local: AnalyserNode | null; remote: Map<string, AnalyserNode> } | null>(null)
 
-  const getOrCreateLocalStream = useCallback(async () => {
-    if (streamRef.current) return streamRef.current
+  const getOrCreateLocalStream = useCallback(async (deviceId: string | null) => {
+    if (streamRef.current && inputDeviceIdRef.current === deviceId) return streamRef.current
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop())
+      streamRef.current = null
+      inputDeviceIdRef.current = null
+      setLocalStream(null)
+    }
     try {
+      const audioConstraint: MediaTrackConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      }
+      if (deviceId) audioConstraint.deviceId = { exact: deviceId }
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
+        audio: audioConstraint,
         video: false,
       })
       streamRef.current = stream
+      inputDeviceIdRef.current = deviceId
       setLocalStream(stream)
       setError(null)
       return stream
@@ -116,8 +126,9 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
     if (!roomId) return
 
     let cancelled = false
+    const deviceId = inputDeviceId
     const setup = async () => {
-      const stream = await getOrCreateLocalStream()
+      const stream = await getOrCreateLocalStream(deviceId)
       if (cancelled || !stream) return
       stream.getAudioTracks().forEach((track) => {
         track.enabled = !isMuted
@@ -133,7 +144,7 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
         next.set(remoteSocketId, { stream: null, displayName: data.displayName, muted: false })
         return next
       })
-      const stream = await getOrCreateLocalStream()
+      const stream = await getOrCreateLocalStream(deviceId)
       if (!stream || cancelled) return
       const pc = createPeerConnection(remoteSocketId)
       stream.getTracks().forEach((track) => pc.addTrack(track, stream))
@@ -149,7 +160,7 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
     const onWebrtcOffer = async (payload: { from: string; sdp: RTCSessionDescriptionInit }) => {
       const fromId = payload.from
       if (fromId === socket.id) return
-      const stream = await getOrCreateLocalStream()
+      const stream = await getOrCreateLocalStream(deviceId)
       if (!stream || cancelled) return
       const pc = createPeerConnection(fromId)
       stream.getTracks().forEach((track) => pc.addTrack(track, stream))
@@ -247,6 +258,21 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
       setRemotePeers(new Map())
     }
   }, [roomId, getOrCreateLocalStream, createPeerConnection, flushPendingCandidates])
+
+  // When input device changes, get new stream and replace track on all existing peer connections
+  useEffect(() => {
+    if (!roomId) return
+    getOrCreateLocalStream(inputDeviceId).then((stream) => {
+      if (!stream) return
+      const track = stream.getAudioTracks()[0]
+      if (!track) return
+      for (const [, { pc }] of peersRef.current) {
+        pc.getSenders().forEach((sender) => {
+          if (sender.track?.kind === 'audio') void sender.replaceTrack(track)
+        })
+      }
+    })
+  }, [roomId, inputDeviceId, getOrCreateLocalStream])
 
   // Sync mute state to local stream tracks
   useEffect(() => {

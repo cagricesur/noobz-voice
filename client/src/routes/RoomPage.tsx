@@ -6,6 +6,7 @@ import {
   Container,
   Group,
   Progress,
+  Select,
   Stack,
   Text,
   Title,
@@ -25,15 +26,21 @@ import { useRoomStore } from "../stores/roomStore";
 function RemoteAudio({
   stream,
   peerId,
+  outputDeviceId,
 }: {
   stream: MediaStream;
   peerId: string;
+  outputDeviceId?: string | null;
 }) {
   const ref = useRef<HTMLAudioElement>(null);
   useEffect(() => {
     if (!ref.current || !stream) return;
     ref.current.srcObject = stream;
   }, [stream]);
+  useEffect(() => {
+    if (!ref.current || !outputDeviceId || typeof ref.current.setSinkId !== "function") return;
+    ref.current.setSinkId(outputDeviceId).catch(() => {});
+  }, [outputDeviceId]);
   return (
     <audio
       ref={ref}
@@ -146,12 +153,18 @@ function UserBox({
   );
 }
 
+interface AudioDevices {
+  inputs: MediaDeviceInfo[];
+  outputs: MediaDeviceInfo[];
+}
+
 export function RoomPage() {
   const navigate = useNavigate();
-  const { displayName } = useRoomStore();
+  const { displayName, inputDeviceId, outputDeviceId, setInputDeviceId, setOutputDeviceId } = useRoomStore();
   const [joined, setJoined] = useState(false);
   const [nameTaken, setNameTaken] = useState(false);
   const [serverPingMs, setServerPingMs] = useState<number | null>(null);
+  const [devices, setDevices] = useState<AudioDevices>({ inputs: [], outputs: [] });
   const {
     remotePeers,
     isMuted,
@@ -160,7 +173,7 @@ export function RoomPage() {
     localLevel,
     peerLevels,
     peerDelayMs,
-  } = useVoiceRoom(ROOM_ID, displayName || "Guest");
+  } = useVoiceRoom(ROOM_ID, displayName || "Guest", inputDeviceId);
 
   useEffect(() => {
     setNameTaken(false);
@@ -180,6 +193,16 @@ export function RoomPage() {
   useEffect(() => {
     if (joined) socket.emit("set-muted", isMuted);
   }, [joined, isMuted]);
+
+  useEffect(() => {
+    if (!joined) return;
+    navigator.mediaDevices.enumerateDevices().then((list) => {
+      setDevices({
+        inputs: list.filter((d) => d.kind === "audioinput"),
+        outputs: list.filter((d) => d.kind === "audiooutput"),
+      });
+    });
+  }, [joined]);
 
   // Measure ping to server (RTT) when in room
   useEffect(() => {
@@ -257,6 +280,35 @@ export function RoomPage() {
           </Alert>
         )}
 
+        <Group gap="md">
+          <Select
+            label="Microphone"
+            placeholder="Default"
+            data={[
+              { value: "", label: "Default" },
+              ...devices.inputs.map((d) => ({ value: d.deviceId, label: d.label || `Mic ${d.deviceId.slice(0, 8)}` })),
+            ]}
+            value={inputDeviceId ?? ""}
+            onChange={(v) => setInputDeviceId(v || null)}
+            clearable
+            size="xs"
+            style={{ minWidth: 180 }}
+          />
+          <Select
+            label="Speaker"
+            placeholder="Default"
+            data={[
+              { value: "", label: "Default" },
+              ...devices.outputs.map((d) => ({ value: d.deviceId, label: d.label || `Speaker ${d.deviceId.slice(0, 8)}` })),
+            ]}
+            value={outputDeviceId ?? ""}
+            onChange={(v) => setOutputDeviceId(v || null)}
+            clearable
+            size="xs"
+            style={{ minWidth: 180 }}
+          />
+        </Group>
+
         {nameTaken && (
           <Alert
             color="orange"
@@ -298,7 +350,7 @@ export function RoomPage() {
                 voiceDelayMs={"voiceDelayMs" in u ? u.voiceDelayMs : undefined}
               >
                 {"stream" in u && u.stream && (
-                  <RemoteAudio stream={u.stream} peerId={u.id} />
+                  <RemoteAudio stream={u.stream} peerId={u.id} outputDeviceId={outputDeviceId} />
                 )}
               </UserBox>
             ),
