@@ -29,7 +29,8 @@ You can deploy **now**. Use two services: one Static Site (frontend) and one Web
 6. **Environment (important):**
    - `VITE_SOCKET_URL` = `https://<your-backend>.onrender.com` (no trailing slash)  
    - Example: `https://noobz-voice-api.onrender.com`
-7. Deploy.
+7. **Redirects/Rewrites (for direct /room links):** In the dashboard, add a **Rewrite**: Source `/*` → Destination `/index.html`. This makes sure opening `/room` (or any path) directly serves the app instead of 404.
+8. Deploy.
 
 The client is built with this env var, so Socket.IO will connect to your backend in production.
 

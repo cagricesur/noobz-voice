@@ -2,6 +2,33 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { socket } from '../lib/socket'
 
 const LEVEL_POLL_MS = 80
+
+function playTone(frequency: number, durationMs: number, type: OscillatorType = 'sine') {
+  try {
+    const ctx = new AudioContext()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = type
+    osc.frequency.value = frequency
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    gain.gain.setValueAtTime(0.15, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + durationMs / 1000)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + durationMs / 1000)
+    ctx.close()
+  } catch {
+    // ignore
+  }
+}
+
+function playJoinSound() {
+  playTone(880, 120)
+}
+
+function playLeaveSound() {
+  playTone(440, 150)
+}
 /** Scale raw frequency average (0–255) to 0–100 for progress bar; cap so normal speech doesn't max out */
 function levelToPercent(level: number): number {
   return Math.min(100, Math.round((level / 255) * 120))
@@ -139,6 +166,7 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string, i
     const onUserJoined = async (data: { socketId: string; displayName?: string }) => {
       const remoteSocketId = data.socketId
       if (remoteSocketId === socket.id) return
+      playJoinSound()
       setRemotePeers((prev) => {
         const next = new Map(prev)
         next.set(remoteSocketId, { stream: null, displayName: data.displayName, muted: false })
@@ -198,6 +226,7 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string, i
     }
 
     const onUserLeft = (data: { socketId: string }) => {
+      playLeaveSound()
       const entry = peersRef.current.get(data.socketId)
       if (entry) {
         entry.pc.close()
