@@ -167,6 +167,18 @@ function distinctByDeviceId(devices: MediaDeviceInfo[]): MediaDeviceInfo[] {
   });
 }
 
+/** Mantine Select requires unique option values; iOS Safari can yield duplicates. */
+function uniqueSelectOptions(
+  options: { value: string; label: string }[]
+): { value: string; label: string }[] {
+  const seen = new Set<string>();
+  return options.filter((o) => {
+    if (seen.has(o.value)) return false;
+    seen.add(o.value);
+    return true;
+  });
+}
+
 export function RoomPage() {
   const navigate = useNavigate();
   const { displayName, inputDeviceId, outputDeviceId, setInputDeviceId, setOutputDeviceId } = useRoomStore();
@@ -293,10 +305,13 @@ export function RoomPage() {
           <Select
             label="Microphone"
             placeholder="Default"
-            data={[
+            data={uniqueSelectOptions([
               { value: "", label: "Default" },
-              ...devices.inputs.map((d) => ({ value: d.deviceId, label: d.label || `Mic ${d.deviceId.slice(0, 8)}` })),
-            ]}
+              ...devices.inputs.map((d) => ({
+                value: d.deviceId,
+                label: d.label || `Mic ${d.deviceId.slice(0, 8)}`,
+              })),
+            ])}
             value={inputDeviceId ?? ""}
             onChange={(v) => setInputDeviceId(v || null)}
             clearable
@@ -306,10 +321,13 @@ export function RoomPage() {
           <Select
             label="Speaker"
             placeholder="Default"
-            data={[
+            data={uniqueSelectOptions([
               { value: "", label: "Default" },
-              ...devices.outputs.map((d) => ({ value: d.deviceId, label: d.label || `Speaker ${d.deviceId.slice(0, 8)}` })),
-            ]}
+              ...devices.outputs.map((d) => ({
+                value: d.deviceId,
+                label: d.label || `Speaker ${d.deviceId.slice(0, 8)}`,
+              })),
+            ])}
             value={outputDeviceId ?? ""}
             onChange={(v) => setOutputDeviceId(v || null)}
             clearable
