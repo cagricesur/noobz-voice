@@ -158,6 +158,15 @@ interface AudioDevices {
   outputs: MediaDeviceInfo[];
 }
 
+function distinctByDeviceId(devices: MediaDeviceInfo[]): MediaDeviceInfo[] {
+  const seen = new Set<string>();
+  return devices.filter((d) => {
+    if (seen.has(d.deviceId)) return false;
+    seen.add(d.deviceId);
+    return true;
+  });
+}
+
 export function RoomPage() {
   const navigate = useNavigate();
   const { displayName, inputDeviceId, outputDeviceId, setInputDeviceId, setOutputDeviceId } = useRoomStore();
@@ -198,8 +207,8 @@ export function RoomPage() {
     if (!joined) return;
     navigator.mediaDevices.enumerateDevices().then((list) => {
       setDevices({
-        inputs: list.filter((d) => d.kind === "audioinput"),
-        outputs: list.filter((d) => d.kind === "audiooutput"),
+        inputs: distinctByDeviceId(list.filter((d) => d.kind === "audioinput")),
+        outputs: distinctByDeviceId(list.filter((d) => d.kind === "audiooutput")),
       });
     });
   }, [joined]);
