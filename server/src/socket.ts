@@ -1,5 +1,15 @@
 import type { Server } from 'socket.io'
 
+const DISPLAY_NAME_MAX_LENGTH = 15
+
+function normalizeDisplayName(value: string): string {
+  const name = value
+    .replace(/[^a-zA-Z0-9-]/g, '')
+    .trim()
+    .slice(0, DISPLAY_NAME_MAX_LENGTH)
+  return name || 'Guest'
+}
+
 const rooms = new Map<string, Set<string>>()
 
 export function setupSocketHandlers(io: Server) {
@@ -7,14 +17,25 @@ export function setupSocketHandlers(io: Server) {
     socket.on('join-room', (roomId: string, displayName?: string) => {
       const id = String(roomId).trim().slice(0, 32)
       if (!id) return
-      socket.join(id)
+      const name = normalizeDisplayName(displayName ?? 'Guest')
+      const nameLower = name.toLowerCase()
       if (!rooms.has(id)) rooms.set(id, new Set())
-      rooms.get(id)!.add(socket.id)
+      const room = rooms.get(id)!
+      const nameTaken = Array.from(room).some((sid) => {
+        const s = io.sockets.sockets.get(sid)
+        const existing = (s?.data.displayName as string) ?? ''
+        return existing.toLowerCase() === nameLower
+      })
+      if (nameTaken) {
+        socket.emit('name-taken')
+        return
+      }
+      socket.join(id)
+      room.add(socket.id)
       socket.data.roomId = id
-      socket.data.displayName = displayName ?? 'Guest'
+      socket.data.displayName = name
       socket.data.muted = false
       socket.to(id).emit('user-joined', { socketId: socket.id, displayName: socket.data.displayName })
-      const room = rooms.get(id)!
       const peers = Array.from(room)
         .filter((sid) => sid !== socket.id)
         .map((sid) => {

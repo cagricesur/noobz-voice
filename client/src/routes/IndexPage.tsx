@@ -11,7 +11,11 @@ import {
   Checkbox,
 } from "@mantine/core";
 import { useRoomStore } from "../stores/roomStore";
-import { DISPLAY_NAME_STORAGE_KEY } from "../lib/constants";
+import {
+  DISPLAY_NAME_MAX_LENGTH,
+  DISPLAY_NAME_STORAGE_KEY,
+  normalizeDisplayName,
+} from "../lib/constants";
 
 function getRandomGuestName(): string {
   return `Guest-${Math.random().toString(36).slice(2, 8)}`;
@@ -22,11 +26,12 @@ export function IndexPage() {
   const { displayName, setDisplayName } = useRoomStore();
   const [rememberName, setRememberName] = useState(false);
 
-  // Load saved display name on mount
+  // Load saved display name on mount (normalized)
   useEffect(() => {
     const saved = localStorage.getItem(DISPLAY_NAME_STORAGE_KEY);
     if (saved != null && saved.trim() !== "") {
-      setDisplayName(saved.trim());
+      const normalized = normalizeDisplayName(saved);
+      if (normalized) setDisplayName(normalized);
       setRememberName(true);
     }
   }, [setDisplayName]);
@@ -48,7 +53,13 @@ export function IndexPage() {
     }
   };
 
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setDisplayName(normalizeDisplayName(e.currentTarget.value));
+  };
+
   const handleJoin = () => {
+    const name = normalizeDisplayName(displayName) || getRandomGuestName();
+    setDisplayName(name);
     navigate({ to: "/room" });
   };
 
@@ -65,9 +76,10 @@ export function IndexPage() {
           <Stack gap="md">
             <TextInput
               label="Your name"
-              placeholder="How others see you"
+              placeholder="Letters, numbers, '-' only, max 15"
               value={displayName}
-              onChange={(e) => setDisplayName(e.currentTarget.value)}
+              onChange={handleNameChange}
+              maxLength={DISPLAY_NAME_MAX_LENGTH}
             />
             <Checkbox
               label="Remember my name"

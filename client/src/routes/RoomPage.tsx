@@ -17,7 +17,7 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useVoiceRoom } from "../hooks/useVoiceRoom";
-import { ROOM_ID } from "../lib/constants";
+import { normalizeDisplayName, ROOM_ID } from "../lib/constants";
 import { socket } from "../lib/socket";
 import { useRoomStore } from "../stores/roomStore";
 
@@ -131,6 +131,7 @@ export function RoomPage() {
   const navigate = useNavigate();
   const { displayName } = useRoomStore();
   const [joined, setJoined] = useState(false);
+  const [nameTaken, setNameTaken] = useState(false);
   const {
     remotePeers,
     isMuted,
@@ -141,11 +142,16 @@ export function RoomPage() {
   } = useVoiceRoom(ROOM_ID, displayName || "Guest");
 
   useEffect(() => {
-    socket.emit("join-room", ROOM_ID, displayName || "Guest");
+    setNameTaken(false);
+    const name = normalizeDisplayName(displayName) || "Guest";
+    socket.emit("join-room", ROOM_ID, name);
     const onJoined = () => setJoined(true);
+    const onNameTaken = () => setNameTaken(true);
     socket.on("joined-room", onJoined);
+    socket.on("name-taken", onNameTaken);
     return () => {
       socket.off("joined-room", onJoined);
+      socket.off("name-taken", onNameTaken);
     };
   }, [displayName]);
 
@@ -203,6 +209,25 @@ export function RoomPage() {
         {error && (
           <Alert color="red" title="Microphone access">
             {error}
+          </Alert>
+        )}
+
+        {nameTaken && (
+          <Alert
+            color="orange"
+            title="Name already in use"
+            withCloseButton
+            onClose={() => setNameTaken(false)}
+          >
+            Someone else is using this name. Go back and choose a different one.
+            <Button
+              variant="light"
+              size="xs"
+              mt="sm"
+              onClick={() => navigate({ to: "/" })}
+            >
+              Choose another name
+            </Button>
           </Alert>
         )}
 
