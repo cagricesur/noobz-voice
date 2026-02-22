@@ -12,8 +12,27 @@ export function setupSocketHandlers(io: Server) {
       rooms.get(id)!.add(socket.id)
       socket.data.roomId = id
       socket.data.displayName = displayName ?? 'Guest'
+      socket.data.muted = false
       socket.to(id).emit('user-joined', { socketId: socket.id, displayName: socket.data.displayName })
-      socket.emit('joined-room', { roomId: id })
+      const room = rooms.get(id)!
+      const peers = Array.from(room)
+        .filter((sid) => sid !== socket.id)
+        .map((sid) => {
+          const s = io.sockets.sockets.get(sid)
+          return s
+            ? { socketId: sid, displayName: (s.data.displayName as string) ?? 'Guest', muted: (s.data.muted as boolean) ?? false }
+            : null
+        })
+        .filter(Boolean) as { socketId: string; displayName: string; muted: boolean }[]
+      socket.emit('joined-room', { roomId: id, peers })
+    })
+
+    socket.on('set-muted', (muted: boolean) => {
+      const roomId = socket.data.roomId as string | undefined
+      if (roomId) {
+        socket.data.muted = muted
+        io.to(roomId).emit('user-muted', { socketId: socket.id, muted })
+      }
     })
 
     socket.on('disconnect', () => {

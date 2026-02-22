@@ -97,11 +97,7 @@ function UserBox({
               )}
             </Text>
             <Text size="xs" c="dimmed">
-              {isSpeaking
-                ? "Speaking…"
-                : isLocal && isMuted
-                  ? "Muted"
-                  : "Connected"}
+              {isSpeaking ? "Speaking…" : isMuted ? "Muted" : "Connected"}
             </Text>
           </div>
         </Group>
@@ -118,6 +114,11 @@ function UserBox({
             ) : (
               <IconMicrophone size={20} />
             )}
+          </ActionIcon>
+        )}
+        {!isLocal && isMuted && (
+          <ActionIcon variant="subtle" color="gray" size="sm" title="Muted" style={{ cursor: "default" }}>
+            <IconMicrophoneOff size={18} />
           </ActionIcon>
         )}
         {children}
@@ -148,10 +149,21 @@ export function RoomPage() {
     };
   }, [displayName]);
 
+  // Broadcast mute state when we join and whenever it changes
+  useEffect(() => {
+    if (joined) socket.emit("set-muted", isMuted);
+  }, [joined, isMuted]);
+
   const handleLeave = () => {
     socket.disconnect();
     socket.connect();
     navigate({ to: "/" });
+  };
+
+  const handleMuteToggle = () => {
+    const next = !isMuted;
+    setMuted(next);
+    socket.emit("set-muted", next);
   };
 
   const userList = [
@@ -167,6 +179,7 @@ export function RoomPage() {
       name: state.displayName ?? peerId.slice(0, 8),
       isLocal: false,
       isSpeaking: !!speakingPeerIds[peerId],
+      isMuted: state.muted,
       stream: state.stream,
     })),
   ];
@@ -199,10 +212,10 @@ export function RoomPage() {
               <UserBox
                 key="local"
                 name={u.name}
-                isSpeaking={u.isSpeaking}
+                isSpeaking={localIsSpeaking}
                 isLocal
                 isMuted={"isMuted" in u ? u.isMuted : undefined}
-                onMuteToggle={() => setMuted(!isMuted)}
+                onMuteToggle={handleMuteToggle}
               />
             ) : (
               <UserBox
@@ -210,6 +223,7 @@ export function RoomPage() {
                 name={u.name}
                 isSpeaking={u.isSpeaking}
                 isLocal={false}
+                isMuted={"isMuted" in u ? u.isMuted : undefined}
               >
                 {"stream" in u && u.stream && (
                   <RemoteAudio stream={u.stream} peerId={u.id} />

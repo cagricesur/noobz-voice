@@ -7,6 +7,7 @@ const LEVEL_POLL_MS = 100
 interface PeerState {
   stream: MediaStream | null
   displayName?: string
+  muted?: boolean
 }
 
 function createStreamAnalyser(stream: MediaStream, ctx: AudioContext): AnalyserNode | null {
@@ -75,12 +76,12 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
       pc.ontrack = (e) => {
         const stream = e.streams[0]
         if (!stream) return
-        setRemotePeers((prev) => {
-          const next = new Map(prev)
-          const existing = prev.get(remoteSocketId)
-          next.set(remoteSocketId, { stream, displayName: existing?.displayName })
-          return next
-        })
+      setRemotePeers((prev) => {
+        const next = new Map(prev)
+        const existing = prev.get(remoteSocketId)
+        next.set(remoteSocketId, { stream, displayName: existing?.displayName, muted: existing?.muted })
+        return next
+      })
       }
 
       pc.onicecandidate = (e) => {
@@ -125,7 +126,7 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
       if (remoteSocketId === socket.id) return
       setRemotePeers((prev) => {
         const next = new Map(prev)
-        next.set(remoteSocketId, { stream: null, displayName: data.displayName })
+        next.set(remoteSocketId, { stream: null, displayName: data.displayName, muted: false })
         return next
       })
       const stream = await getOrCreateLocalStream()
@@ -194,6 +195,34 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
       })
     }
 
+    const onJoinedRoom = (payload: { roomId: string; peers?: { socketId: string; displayName: string; muted: boolean }[] }) => {
+      if (!payload.peers?.length) return
+      setRemotePeers((prev) => {
+        const next = new Map(prev)
+        for (const p of payload.peers!) {
+          if (p.socketId === socket.id) continue
+          const existing = prev.get(p.socketId)
+          next.set(p.socketId, {
+            stream: existing?.stream ?? null,
+            displayName: p.displayName,
+            muted: p.muted,
+          })
+        }
+        return next
+      })
+    }
+
+    const onUserMuted = (data: { socketId: string; muted: boolean }) => {
+      setRemotePeers((prev) => {
+        const next = new Map(prev)
+        const cur = next.get(data.socketId)
+        if (cur) next.set(data.socketId, { ...cur, muted: data.muted })
+        return next
+      })
+    }
+
+    socket.on('joined-room', onJoinedRoom)
+    socket.on('user-muted', onUserMuted)
     socket.on('user-joined', onUserJoined)
     socket.on('webrtc-offer', onWebrtcOffer)
     socket.on('webrtc-answer', onWebrtcAnswer)
@@ -202,6 +231,8 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
 
     return () => {
       cancelled = true
+      socket.off('joined-room', onJoinedRoom)
+      socket.off('user-muted', onUserMuted)
       socket.off('user-joined', onUserJoined)
       socket.off('webrtc-offer', onWebrtcOffer)
       socket.off('webrtc-answer', onWebrtcAnswer)
@@ -228,6 +259,7 @@ export function useVoiceRoom(roomId: string | undefined, _displayName: string) {
     if (!local && remotes.size === 0) return
 
     const ctx = new AudioContext()
+    void ctx.resume() // ensure context runs so local level is detected (e.g. after user gesture)
     let localAnalyser: AnalyserNode | null = null
     if (local && local.getAudioTracks().length > 0) {
       localAnalyser = createStreamAnalyser(local, ctx)
